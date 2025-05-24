@@ -1,4 +1,5 @@
 package org.realtimevideo;
+
 import org.bytedeco.javacv.*;
 import org.bytedeco.opencv.opencv_core.Mat;
 
@@ -6,6 +7,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferByte;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class InteractiveImageProcessor extends JFrame {
     private JLabel originalImageLabel;
@@ -16,13 +18,28 @@ public class InteractiveImageProcessor extends JFrame {
     private OpenCVFrameGrabber grabber;
     private OpenCVFrameConverter.ToMat converter = new OpenCVFrameConverter.ToMat();
     private volatile boolean running = false;
+    private PerformanceTracker performanceTracker = new PerformanceTracker();
 
     public InteractiveImageProcessor() {
+        initializeUI();
+    }
+
+    private void initializeUI() {
         setTitle("Interactive Camera Processor");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLayout(new BorderLayout(10, 10));
 
-        // Image Display Panel
+        setupImageDisplayPanel();
+        setupControlPanel();
+        setupProgressPanel();
+
+        setSize(900, 700);
+        setLocationRelativeTo(null);
+        setVisible(true);
+        add(performanceTracker.getMetricsPanel(), BorderLayout.SOUTH);
+    }
+
+    private void setupImageDisplayPanel() {
         originalImageLabel = new JLabel("Original Image", JLabel.CENTER);
         originalImageLabel.setPreferredSize(new Dimension(400, 300));
         processedImageLabel = new JLabel("Processed Image", JLabel.CENTER);
@@ -31,8 +48,9 @@ public class InteractiveImageProcessor extends JFrame {
         imagePanel.add(originalImageLabel);
         imagePanel.add(processedImageLabel);
         add(imagePanel, BorderLayout.NORTH);
+    }
 
-        // Control Panel
+    private void setupControlPanel() {
         JPanel leftPanel = new JPanel();
         leftPanel.setLayout(new BoxLayout(leftPanel, BoxLayout.Y_AXIS));
         JButton startCameraButton = new JButton("Start Camera");
@@ -44,28 +62,26 @@ public class InteractiveImageProcessor extends JFrame {
         leftPanel.add(operationSelector);
         add(leftPanel, BorderLayout.WEST);
 
-        // Progress Panel
+        startCameraButton.addActionListener(e -> toggleCamera(startCameraButton));
+    }
+
+    private void setupProgressPanel() {
         JPanel rightPanel = new JPanel();
         rightPanel.setLayout(new BorderLayout());
         progressBar = new JProgressBar(0, 100);
         progressBar.setStringPainted(true);
         rightPanel.add(progressBar, BorderLayout.NORTH);
         add(rightPanel, BorderLayout.EAST);
+    }
 
-        // Button Action
-        startCameraButton.addActionListener(e -> {
-            if (!running) {
-                startCameraFeed();
-                startCameraButton.setText("Stop Camera");
-            } else {
-                stopCameraFeed();
-                startCameraButton.setText("Start Camera");
-            }
-        });
-
-        setSize(900, 700);
-        setLocationRelativeTo(null);
-        setVisible(true);
+    private void toggleCamera(JButton button) {
+        if (!running) {
+            startCameraFeed();
+            button.setText("Stop Camera");
+        } else {
+            stopCameraFeed();
+            button.setText("Start Camera");
+        }
     }
 
     private void startCameraFeed() {
@@ -75,20 +91,27 @@ public class InteractiveImageProcessor extends JFrame {
                 grabber = new OpenCVFrameGrabber(0);
                 grabber.start();
 
-                System.out.println("running: " + running);
+                BufferedImage buffer = null;
+                long bufferStartTime = System.currentTimeMillis();
+
                 while (running) {
                     org.bytedeco.javacv.Frame frame = grabber.grab();
-                    System.out.println("Grabbed frame: " + (frame != null));
                     if (frame == null) continue;
                     Mat mat = converter.convert(frame);
                     BufferedImage original = matToBufferedImage(mat);
                     SwingUtilities.invokeLater(() -> originalImageLabel.setIcon(new ImageIcon(getScaledImage(original, 400, 300))));
 
-                    // Processed image
                     BufferedImage processed = applyFilter(original);
                     SwingUtilities.invokeLater(() -> processedImageLabel.setIcon(new ImageIcon(getScaledImage(processed, 400, 300))));
 
-                    Thread.sleep(100); // approx. 10 fps
+                    // Buffer for 10 seconds
+                    if (buffer == null) {
+                        buffer = original;
+                    }
+                    if (System.currentTimeMillis() - bufferStartTime >= 10000) {
+                        compareAllOperations(buffer);
+                        bufferStartTime = System.currentTimeMillis();
+                    }
                 }
 
                 grabber.stop();
@@ -141,12 +164,21 @@ public class InteractiveImageProcessor extends JFrame {
         int chunkSize = height / threadsCount;
         BufferedImage result = new BufferedImage(input.getWidth(), height, BufferedImage.TYPE_INT_RGB);
         Thread[] threads = new Thread[threadsCount];
+        AtomicLong totalProcessingTime = new AtomicLong();
 
         for (int i = 0; i < threadsCount; i++) {
             int startY = i * chunkSize;
             int endY = (i == threadsCount - 1) ? height : (i + 1) * chunkSize;
             String operation = (String) operationSelector.getSelectedItem();
-            threads[i] = new FilterThread(input, result, startY, endY, operation);
+            threads[i] = new FilterThread(input, result, startY, endY, operation) {
+                @Override
+                public void run() {
+                    long startTime = System.currentTimeMillis();
+                    super.run();
+                    long endTime = System.currentTimeMillis();
+                    totalProcessingTime.addAndGet(endTime - startTime);
+                }
+            };
             threads[i].start();
         }
 
@@ -158,54 +190,34 @@ public class InteractiveImageProcessor extends JFrame {
             }
         }
 
+        performanceTracker.updateMetrics(String.format(
+            "Operation: %s\nThreads: %d\nTotal Processing Time: %d ms",
+            operationSelector.getSelectedItem(), threadsCount, totalProcessingTime.get()
+        ));
+
         return result;
+    }
+
+    public void compareAllOperations(BufferedImage input) {
+        String[] operations = {"Edge Detection", "Grayscale"};
+        StringBuilder comparisonResults = new StringBuilder("Performance Comparison:\n");
+
+        for (String operation : operations) {
+            operationSelector.setSelectedItem(operation);
+            long startTime = System.currentTimeMillis();
+            applyFilter(input);
+            long endTime = System.currentTimeMillis();
+            comparisonResults.append(String.format(
+                "Operation: %s, Time Taken: %d ms\n",
+                operation, endTime - startTime
+            ));
+        }
+
+        performanceTracker.updateMetrics(comparisonResults.toString());
     }
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(InteractiveImageProcessor::new);
-    }
-}
-
-class FilterThread extends Thread {
-    private BufferedImage input;
-    private BufferedImage output;
-    private int startY, endY;
-    private String operation;
-
-    public FilterThread(BufferedImage input, BufferedImage output, int startY, int endY, String operation) {
-        this.input = input;
-        this.output = output;
-        this.startY = startY;
-        this.endY = endY;
-        this.operation = operation;
-    }
-
-    @Override
-    public void run() {
-        for (int y = startY; y < endY; y++) {
-            for (int x = 0; x < input.getWidth(); x++) {
-                Color color = new Color(input.getRGB(x, y));
-                int r = color.getRed();
-                int g = color.getGreen();
-                int b = color.getBlue();
-
-                int newRGB = switch (operation) {
-                    case "Grayscale" -> {
-                        int gray = (r + g + b) / 3;
-                        yield new Color(gray, gray, gray).getRGB();
-                    }
-                    case "Edge Detection" -> {
-                        // Dummy basic edge detection placeholder
-                        int gray = (r + g + b) / 3;
-                        int edge = gray > 128 ? 255 : 0;
-                        yield new Color(edge, edge, edge).getRGB();
-                    }
-                    default -> color.getRGB();
-                };
-
-                output.setRGB(x, y, newRGB);
-            }
-        }
     }
 }
 
