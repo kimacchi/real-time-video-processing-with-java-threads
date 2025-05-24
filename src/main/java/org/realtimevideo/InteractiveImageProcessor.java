@@ -1,44 +1,77 @@
 package org.realtimevideo;
-import org.bytedeco.javacv.*;
-import org.bytedeco.opencv.opencv_core.Mat;
 
-import javax.swing.*;
-import java.awt.*;
+import java.awt.BorderLayout;
+import java.awt.Dimension;
+import java.awt.GridLayout;
 import java.awt.image.BufferedImage;
-import java.awt.image.DataBufferByte;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.ImageIcon;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JProgressBar;
+import javax.swing.JScrollPane;
+import javax.swing.JSlider;
+import javax.swing.JTextArea;
+import javax.swing.SwingUtilities;
+
+import org.bytedeco.javacv.OpenCVFrameConverter;
+import org.bytedeco.javacv.OpenCVFrameGrabber;
+import org.bytedeco.opencv.opencv_core.Mat;
+import org.realtimevideo.core.ImageUtils;
+import org.realtimevideo.core.PerformanceMetrics;
+import org.realtimevideo.processing.SequentialFilter; // Güncellendi (eski FilterThread)
+import org.realtimevideo.processing.ThreadFilter;
+
+/**
+ * InteractiveImageProcessor sınıfı, gerçek zamanlı kamera görüntüsünü alıp
+ * kullanıcı tarafından seçilen çeşitli görüntü işleme filtrelerini uygulayan
+ * bir Swing tabanlı GUI uygulamasıdır. Ayrıca, sıralı ve paralel işlem
+ * performansını karşılaştırmak için bir ölçüm aracı içerir.
+ */
 public class InteractiveImageProcessor extends JFrame {
     private JLabel originalImageLabel;
     private JLabel processedImageLabel;
     private JComboBox<String> operationSelector;
-    private JProgressBar progressBar;
     private JCheckBox parallelProcessingCheckbox;
     private JLabel processingTimeLabel;
     private JSlider contrastSlider;
     private JLabel contrastValueLabel;
     
-    // Performance measurement components
     private JPanel measurementPanel;
     private JButton startMeasurementButton;
     private JTextArea resultsArea;
     private JProgressBar measurementProgressBar;
     private volatile boolean isMeasuring = false;
     private List<BufferedImage> recordedFrames;
-    private static final int RECORDING_DURATION = 5000; // 5 seconds in milliseconds
+    private static final int RECORDING_DURATION = 5000; // 5 saniye
 
     private OpenCVFrameGrabber grabber;
     private OpenCVFrameConverter.ToMat converter = new OpenCVFrameConverter.ToMat();
     private volatile boolean running = false;
 
+    /**
+     * InteractiveImageProcessor sınıfının yapıcı metodu.
+     * GUI bileşenlerini başlatır, düzeni ayarlar ve olay dinleyicilerini tanımlar.
+     */
     public InteractiveImageProcessor() {
         setTitle("Interactive Camera Processor");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLayout(new BorderLayout(10, 10));
 
-        // Image Display Panel
+        // Görüntü Gösterim Paneli
         originalImageLabel = new JLabel("Original Image", JLabel.CENTER);
         originalImageLabel.setPreferredSize(new Dimension(400, 300));
         processedImageLabel = new JLabel("Processed Image", JLabel.CENTER);
@@ -48,7 +81,7 @@ public class InteractiveImageProcessor extends JFrame {
         imagePanel.add(processedImageLabel);
         add(imagePanel, BorderLayout.NORTH);
 
-        // Control Panel (Left)
+        // Kontrol Paneli (Sol)
         JPanel leftPanel = new JPanel();
         leftPanel.setLayout(new BoxLayout(leftPanel, BoxLayout.Y_AXIS));
         JButton startCameraButton = new JButton("Start Camera");
@@ -57,17 +90,28 @@ public class InteractiveImageProcessor extends JFrame {
         parallelProcessingCheckbox = new JCheckBox("Parallel Processing", true);
         processingTimeLabel = new JLabel("Processing Time: 0 ms");
 
-        // Contrast controls
-        contrastSlider = new JSlider(JSlider.HORIZONTAL, 0, 200, 100);
+        // Kontrast kontrolleri
+        contrastSlider = new JSlider(JSlider.HORIZONTAL, 0, 200, 100); 
         contrastSlider.setMajorTickSpacing(50);
         contrastSlider.setMinorTickSpacing(10);
         contrastSlider.setPaintTicks(true);
         contrastSlider.setPaintLabels(true);
-        contrastValueLabel = new JLabel("Contrast: 100%");
+        contrastValueLabel = new JLabel("Contrast: 100"); 
+        
         contrastSlider.setVisible(false);
         contrastValueLabel.setVisible(false);
 
-        // Add components to left panel
+        operationSelector.addActionListener(e -> {
+            String selectedOperation = (String) operationSelector.getSelectedItem();
+            boolean isContrastSelected = "Contrast".equals(selectedOperation);
+            contrastSlider.setVisible(isContrastSelected);
+            contrastValueLabel.setVisible(isContrastSelected);
+        });
+
+        contrastSlider.addChangeListener(e -> {
+            contrastValueLabel.setText("Contrast: " + contrastSlider.getValue());
+        });
+
         leftPanel.add(startCameraButton);
         leftPanel.add(Box.createVerticalStrut(20));
         leftPanel.add(new JLabel("Choose Operation:"));
@@ -81,7 +125,7 @@ public class InteractiveImageProcessor extends JFrame {
         leftPanel.add(contrastSlider);
         add(leftPanel, BorderLayout.WEST);
 
-        // Measurement Panel (Right)
+        // Ölçüm Paneli (Sağ)
         measurementPanel = new JPanel();
         measurementPanel.setLayout(new BoxLayout(measurementPanel, BoxLayout.Y_AXIS));
         measurementPanel.setBorder(BorderFactory.createTitledBorder("Performance Measurement"));
@@ -100,7 +144,7 @@ public class InteractiveImageProcessor extends JFrame {
         measurementPanel.add(resultsScrollPane);
         add(measurementPanel, BorderLayout.EAST);
 
-        // Button Actions
+        // Buton Eylemleri
         startCameraButton.addActionListener(e -> {
             if (!running) {
                 startCameraFeed();
@@ -122,33 +166,37 @@ public class InteractiveImageProcessor extends JFrame {
         setVisible(true);
     }
 
+    /**
+     * Kamera akışını başlatır. Ayrı bir iş parçacığında çalışır.
+     * Belirlenen FPS'e ulaşmak için zamanlama yapar.
+     */
     private void startCameraFeed() {
         running = true;
         new Thread(() -> {
             try {
                 grabber = new OpenCVFrameGrabber(0);
-                grabber.setFormat("MJPG"); // Use MJPG format for better performance
-                grabber.setImageWidth(640); // Set a reasonable resolution
+                grabber.setFormat("MJPG"); 
+                grabber.setImageWidth(640); 
                 grabber.setImageHeight(480);
-                grabber.setFrameRate(30); // Set to 30 FPS
+                grabber.setFrameRate(30); 
                 grabber.start();
 
                 long lastFrameTime = System.nanoTime();
-                long targetFrameTime = 1_000_000_000 / 30; // 30 FPS target
+                long targetFrameTime = 1_000_000_000 / 30; 
 
                 while (running) {
                     long currentTime = System.nanoTime();
                     long elapsedTime = currentTime - lastFrameTime;
 
-                    // Only process frame if enough time has passed
                     if (elapsedTime >= targetFrameTime) {
                         org.bytedeco.javacv.Frame frame = grabber.grab();
-                        if (frame == null) continue;
+                        if (frame == null || frame.image == null) continue;
                         
                         Mat mat = converter.convert(frame);
-                        BufferedImage original = matToBufferedImage(mat);
+                        if (mat == null || mat.empty()) continue;
+
+                        BufferedImage original = ImageUtils.matToBufferedImage(mat);
                         
-                        // Processed image with timing
                         long startTime = System.currentTimeMillis();
                         BufferedImage processed = applyFilter(original);
                         long endTime = System.currentTimeMillis();
@@ -156,62 +204,48 @@ public class InteractiveImageProcessor extends JFrame {
                         
                         final long finalProcessingTime = processingTime;
                         SwingUtilities.invokeLater(() -> {
-                            originalImageLabel.setIcon(new ImageIcon(getScaledImage(original, 400, 300)));
-                            processedImageLabel.setIcon(new ImageIcon(getScaledImage(processed, 400, 300)));
+                            originalImageLabel.setIcon(new ImageIcon(ImageUtils.getScaledImage(original, 400, 300)));
+                            processedImageLabel.setIcon(new ImageIcon(ImageUtils.getScaledImage(processed, 400, 300)));
                             processingTimeLabel.setText(String.format("Processing Time: %d ms", finalProcessingTime));
                         });
 
                         lastFrameTime = currentTime;
                     } else {
-                        // Small sleep to prevent CPU overuse
-                        Thread.sleep(1);
+                        Thread.sleep(1); // CPU kullanımını azaltmak için kısa bir bekleme
                     }
                 }
-
-                grabber.stop();
             } catch (Exception e) {
                 e.printStackTrace();
+                SwingUtilities.invokeLater(() -> 
+                    JOptionPane.showMessageDialog(this, "Camera error: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE)
+                );
+            } finally {
+                if (grabber != null) {
+                    try {
+                        grabber.stop();
+                        grabber.release();
+                    } catch (OpenCVFrameGrabber.Exception ex) {
+                        ex.printStackTrace();
+                    }
+                }
+                running = false;
+                 // GUI güncellemesi (buton metni) zaten ActionListener içinde ele alınıyor.
             }
         }).start();
     }
 
+    /**
+     * Kamera akışını durdurur.
+     */
     private void stopCameraFeed() {
         running = false;
     }
 
-    private BufferedImage matToBufferedImage(Mat mat) {
-        int type = BufferedImage.TYPE_3BYTE_BGR;
-        int bufferSize = mat.channels() * mat.cols() * mat.rows();
-        byte[] b = new byte[bufferSize];
-        mat.data().get(b);
-        BufferedImage image = new BufferedImage(mat.cols(), mat.rows(), type);
-        byte[] targetPixels = ((DataBufferByte) image.getRaster().getDataBuffer()).getData();
-        System.arraycopy(b, 0, targetPixels, 0, b.length);
-        return image;
-    }
-
-    private BufferedImage getScaledImage(BufferedImage img, int maxW, int maxH) {
-        int originalW = img.getWidth();
-        int originalH = img.getHeight();
-        double aspectRatio = (double) originalW / originalH;
-        int newW = maxW, newH = maxH;
-
-        if (aspectRatio >= 1) {
-            newH = (int) (maxW / aspectRatio);
-        } else {
-            newW = (int) (maxH * aspectRatio);
-        }
-
-        Image tmp = img.getScaledInstance(newW, newH, Image.SCALE_SMOOTH);
-        BufferedImage scaled = new BufferedImage(newW, newH, BufferedImage.TYPE_INT_RGB);
-
-        Graphics2D g2d = scaled.createGraphics();
-        g2d.drawImage(tmp, 0, 0, null);
-        g2d.dispose();
-
-        return scaled;
-    }
-
+    /**
+     * Seçilen filtreyi uygular (paralel veya sıralı).
+     * @param input İşlenecek BufferedImage.
+     * @return İşlenmiş BufferedImage.
+     */
     private BufferedImage applyFilter(BufferedImage input) {
         String operation = (String) operationSelector.getSelectedItem();
         
@@ -222,44 +256,48 @@ public class InteractiveImageProcessor extends JFrame {
         }
     }
 
+    /**
+     * Filtreyi paralel olarak uygular.
+     * @param input İşlenecek BufferedImage.
+     * @param operation Uygulanacak operasyonun adı.
+     * @return Paralel işlenmiş BufferedImage.
+     */
     private BufferedImage applyParallelFilter(BufferedImage input, String operation) {
-        int threadsCount = 8;
+        int threadsCount = Runtime.getRuntime().availableProcessors(); 
+        if (threadsCount <= 0) threadsCount = 8; 
         int height = input.getHeight();
-        int chunkSize = height / threadsCount;
+        int chunkSize = Math.max(1, height / threadsCount); 
         BufferedImage result = new BufferedImage(input.getWidth(), height, BufferedImage.TYPE_INT_RGB);
         Thread[] threads = new Thread[threadsCount];
-        long[] threadTimes = new long[threadsCount];
 
         for (int i = 0; i < threadsCount; i++) {
             int startY = i * chunkSize;
-            int endY = (i == threadsCount - 1) ? height : (i + 1) * chunkSize;
-            final int threadIndex = i;
-            threads[i] = new Thread(() -> {
-                long threadStartTime = System.currentTimeMillis();
-                FilterThread filterThread = new FilterThread(input, result, startY, endY, operation, contrastSlider.getValue());
-                filterThread.run();
-                threadTimes[threadIndex] = System.currentTimeMillis() - threadStartTime;
-            });
+            int endY = (i == threadsCount - 1) ? height : Math.min(height, (i + 1) * chunkSize); 
+            if (startY >= endY) continue; 
+
+            threads[i] = new ThreadFilter(input, result, startY, endY, operation, contrastSlider.getValue());
             threads[i].start();
         }
 
         for (Thread t : threads) {
-            try {
-                t.join();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+            if (t != null) { 
+                try {
+                    t.join();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                    Thread.currentThread().interrupt();
+                }
             }
         }
-
-        // Log individual thread processing times
-        System.out.println("Parallel Processing Times (ms):");
-        for (int i = 0; i < threadsCount; i++) {
-            System.out.printf("Thread %d: %d ms%n", i, threadTimes[i]);
-        }
-
         return result;
     }
 
+    /**
+     * Filtreyi sıralı olarak uygular.
+     * @param input İşlenecek BufferedImage.
+     * @param operation Uygulanacak operasyonun adı.
+     * @return Sıralı işlenmiş BufferedImage.
+     */
     private BufferedImage applySequentialFilter(BufferedImage input, String operation) {
         BufferedImage result = new BufferedImage(input.getWidth(), input.getHeight(), BufferedImage.TYPE_INT_RGB);
         SequentialFilter filter = new SequentialFilter(input, result, operation, contrastSlider.getValue());
@@ -267,6 +305,10 @@ public class InteractiveImageProcessor extends JFrame {
         return result;
     }
 
+    /**
+     * Performans ölçümünü başlatır. Ayrı bir iş parçacığında çalışır.
+     * Kareleri kaydeder, ardından sıralı ve paralel işler, sonuçları gösterir.
+     */
     private void startPerformanceMeasurement() {
         if (running) {
             JOptionPane.showMessageDialog(this, "Please stop the camera feed before starting the measurement.");
@@ -276,11 +318,11 @@ public class InteractiveImageProcessor extends JFrame {
         isMeasuring = true;
         startMeasurementButton.setEnabled(false);
         recordedFrames = new ArrayList<>();
-        resultsArea.setText("Starting performance measurement...\n");
+        resultsArea.setText("Starting performance measurement...\nRecording frames for " + (RECORDING_DURATION/1000) + " seconds...\n");
         
         new Thread(() -> {
+            // Frame Kayıt Aşaması
             try {
-                // Start camera and record frames
                 grabber = new OpenCVFrameGrabber(0);
                 grabber.setFormat("MJPG");
                 grabber.setImageWidth(640);
@@ -288,404 +330,153 @@ public class InteractiveImageProcessor extends JFrame {
                 grabber.setFrameRate(30);
                 grabber.start();
 
-                long startTime = System.currentTimeMillis();
-                while (System.currentTimeMillis() - startTime < RECORDING_DURATION) {
+                long recordStartTime = System.currentTimeMillis();
+                while (System.currentTimeMillis() - recordStartTime < RECORDING_DURATION) {
                     org.bytedeco.javacv.Frame frame = grabber.grab();
-                    if (frame != null) {
+                    if (frame != null && frame.image != null) {
                         Mat mat = converter.convert(frame);
-                        recordedFrames.add(matToBufferedImage(mat));
+                        if (mat != null && !mat.empty()){
+                           recordedFrames.add(ImageUtils.matToBufferedImage(mat));
+                        }
                     }
-                    int progress = (int) ((System.currentTimeMillis() - startTime) * 100 / RECORDING_DURATION);
-                    SwingUtilities.invokeLater(() -> measurementProgressBar.setValue(progress));
-                    Thread.sleep(10);
+                    int progress = (int) ((System.currentTimeMillis() - recordStartTime) * 100 / RECORDING_DURATION);
+                    final int currentProgress = progress; // Final for lambda
+                    SwingUtilities.invokeLater(() -> measurementProgressBar.setValue(currentProgress));
+                    Thread.sleep(10); 
                 }
-                grabber.stop();
+            } catch (Exception e) {
+                e.printStackTrace();
+                final String errorMessage = e.getMessage();
+                SwingUtilities.invokeLater(() -> resultsArea.append("Error during frame recording: " + errorMessage + "\n"));
+            } finally {
+                 if (grabber != null) {
+                    try {
+                        grabber.stop();
+                        grabber.release();
+                    } catch (OpenCVFrameGrabber.Exception ex) {
+                        ex.printStackTrace();
+                    }
+                }
+            }
 
-                // Process frames with each filter
+            SwingUtilities.invokeLater(() -> resultsArea.append("Frame recording complete. Processing " + recordedFrames.size() + " frames...\n"));
+            measurementProgressBar.setValue(0); // İkinci aşama için progress bar'ı sıfırla (isteğe bağlı)
+
+            // İşleme Aşaması
+            if (recordedFrames.isEmpty()) {
+                SwingUtilities.invokeLater(() -> resultsArea.append("No frames were recorded. Measurement aborted.\n"));
+            } else {
                 String[] operations = {"ASCII Art", "Gaussian Blur", "Sobel Edge Detection", "Edge Detection", "Grayscale", "Contrast"};
                 Map<String, PerformanceMetrics> sequentialResults = new HashMap<>();
                 Map<String, PerformanceMetrics> parallelResults = new HashMap<>();
 
-                // Sequential processing
-                resultsArea.append("\nSequential Processing Results:\n");
-                for (String operation : operations) {
+                // Sıralı İşleme
+                SwingUtilities.invokeLater(() -> resultsArea.append("\nSequential Processing Results:\n"));
+                for (int i = 0; i < operations.length; i++) {
+                    String operation = operations[i];
                     PerformanceMetrics metrics = processFramesSequentially(operation);
                     sequentialResults.put(operation, metrics);
-                    resultsArea.append(String.format("\n%s:\n", operation));
-                    resultsArea.append(metrics.toString());
+                    final String opName = operation; // Final for lambda
+                    final PerformanceMetrics finalMetrics = metrics; // Final for lambda
+                    SwingUtilities.invokeLater(() -> {
+                        resultsArea.append(String.format("\n%s:\n", opName));
+                        resultsArea.append(finalMetrics.toString());
+                        // measurementProgressBar.setValue(...); // Her operasyon için ilerleme gösterilebilir
+                    });
                 }
 
-                // Parallel processing
-                resultsArea.append("\nParallel Processing Results:\n");
-                for (String operation : operations) {
+                // Paralel İşleme
+                SwingUtilities.invokeLater(() -> resultsArea.append("\nParallel Processing Results:\n"));
+                for (int i = 0; i < operations.length; i++) {
+                    String operation = operations[i];
                     PerformanceMetrics metrics = processFramesParallel(operation);
                     parallelResults.put(operation, metrics);
-                    resultsArea.append(String.format("\n%s:\n", operation));
-                    resultsArea.append(metrics.toString());
+                    final String opName = operation; // Final for lambda
+                    final PerformanceMetrics finalMetrics = metrics; // Final for lambda
+                    SwingUtilities.invokeLater(() -> {
+                        resultsArea.append(String.format("\n%s:\n", opName));
+                        resultsArea.append(finalMetrics.toString());
+                    });
                 }
 
-                // Calculate and display performance gains
-                resultsArea.append("\nPerformance Gains (Parallel vs Sequential):\n");
+                // Performans Karşılaştırması
+                SwingUtilities.invokeLater(() -> resultsArea.append("\nPerformance Gains (Parallel vs Sequential):\n"));
                 for (String operation : operations) {
                     PerformanceMetrics seq = sequentialResults.get(operation);
                     PerformanceMetrics par = parallelResults.get(operation);
-                    double speedup = (double) seq.totalTime / par.totalTime;
-                    resultsArea.append(String.format("\n%s: %.2fx speedup\n", operation, speedup));
+                    final String opName = operation; // Final for lambda
+                    if (par != null && seq != null && par.totalTime > 0 && seq.totalTime > 0) {
+                        double speedup = (double) seq.totalTime / par.totalTime;
+                        SwingUtilities.invokeLater(() -> resultsArea.append(String.format("\n%s: %.2fx speedup\n", opName, speedup)));
+                    } else {
+                        SwingUtilities.invokeLater(() -> resultsArea.append(String.format("\n%s: N/A (insufficient data for speedup calculation)\n", opName)));
+                    }
                 }
-
-            } catch (Exception e) {
-                e.printStackTrace();
-                resultsArea.append("Error during measurement: " + e.getMessage() + "\n");
-            } finally {
-                isMeasuring = false;
-                SwingUtilities.invokeLater(() -> {
-                    startMeasurementButton.setEnabled(true);
-                    measurementProgressBar.setValue(0);
-                });
             }
+
+            isMeasuring = false;
+            SwingUtilities.invokeLater(() -> {
+                startMeasurementButton.setEnabled(true);
+                measurementProgressBar.setValue(100); // Ölçüm bittiğinde %100 yap
+                resultsArea.append("\nPerformance measurement finished.\n");
+                resultsArea.setCaretPosition(resultsArea.getDocument().getLength()); // En sona scroll et
+            });
         }).start();
     }
 
+    /**
+     * Kaydedilmiş kareleri sıralı olarak işler.
+     * @param operation Uygulanacak operasyonun adı.
+     * @return Performans metrikleri.
+     */
     private PerformanceMetrics processFramesSequentially(String operation) {
         PerformanceMetrics metrics = new PerformanceMetrics();
-        long startTime = System.currentTimeMillis();
-        AtomicInteger processedFrames = new AtomicInteger(0);
+        if (recordedFrames == null || recordedFrames.isEmpty()) return metrics;
+
+        long totalProcessingTimeForOperation = 0;
+        AtomicInteger processedFramesCount = new AtomicInteger(0);
 
         for (BufferedImage frame : recordedFrames) {
             long frameStart = System.currentTimeMillis();
-            BufferedImage processed = applySequentialFilter(frame, operation);
+            // applySequentialFilter doğrudan bir BufferedImage döndürür, bu yüzden sonucu atamaya gerek yok.
+            // Ancak, performans ölçümü için işlenmiş kareye ihtiyacımız yok, sadece süreye ihtiyacımız var.
+            applySequentialFilter(frame, operation); 
             long frameTime = System.currentTimeMillis() - frameStart;
             
             metrics.frameTimes.add(frameTime);
-            metrics.totalTime += frameTime;
-            processedFrames.incrementAndGet();
+            totalProcessingTimeForOperation += frameTime;
+            processedFramesCount.incrementAndGet();
         }
 
-        metrics.totalFrames = processedFrames.get();
-        metrics.totalTime = System.currentTimeMillis() - startTime;
+        metrics.totalFrames = processedFramesCount.get();
+        metrics.totalTime = totalProcessingTimeForOperation;
         return metrics;
     }
 
+    /**
+     * Kaydedilmiş kareleri paralel olarak işler.
+     * @param operation Uygulanacak operasyonun adı.
+     * @return Performans metrikleri.
+     */
     private PerformanceMetrics processFramesParallel(String operation) {
         PerformanceMetrics metrics = new PerformanceMetrics();
-        long startTime = System.currentTimeMillis();
-        AtomicInteger processedFrames = new AtomicInteger(0);
+         if (recordedFrames == null || recordedFrames.isEmpty()) return metrics;
+
+        long totalProcessingTimeForOperation = 0;
+        AtomicInteger processedFramesCount = new AtomicInteger(0);
 
         for (BufferedImage frame : recordedFrames) {
             long frameStart = System.currentTimeMillis();
-            BufferedImage processed = applyParallelFilter(frame, operation);
+            applyParallelFilter(frame, operation); 
             long frameTime = System.currentTimeMillis() - frameStart;
             
             metrics.frameTimes.add(frameTime);
-            metrics.totalTime += frameTime;
-            processedFrames.incrementAndGet();
+            totalProcessingTimeForOperation += frameTime;
+            processedFramesCount.incrementAndGet();
         }
 
-        metrics.totalFrames = processedFrames.get();
-        metrics.totalTime = System.currentTimeMillis() - startTime;
+        metrics.totalFrames = processedFramesCount.get();
+        metrics.totalTime = totalProcessingTimeForOperation;
         return metrics;
     }
-
-    private static class PerformanceMetrics {
-        List<Long> frameTimes = new ArrayList<>();
-        long totalTime;
-        int totalFrames;
-
-        @Override
-        public String toString() {
-            if (frameTimes.isEmpty()) return "No frames processed";
-            
-            long min = Collections.min(frameTimes);
-            long max = Collections.max(frameTimes);
-            double avg = frameTimes.stream().mapToLong(Long::longValue).average().orElse(0);
-            
-            return String.format(
-                "Total Frames: %d\n" +
-                "Total Time: %d ms\n" +
-                "Average Frame Time: %.2f ms\n" +
-                "Min Frame Time: %d ms\n" +
-                "Max Frame Time: %d ms\n" +
-                "FPS: %.2f",
-                totalFrames,
-                totalTime,
-                avg,
-                min,
-                max,
-                (totalFrames * 1000.0) / totalTime
-            );
-        }
-    }
-
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(InteractiveImageProcessor::new);
-    }
 }
-
-class GaussianKernel {
-    private static final int KERNEL_SIZE = 5;
-    private static final double[][] kernel = {
-        {0.003, 0.013, 0.022, 0.013, 0.003},
-        {0.013, 0.059, 0.097, 0.059, 0.013},
-        {0.022, 0.097, 0.159, 0.097, 0.022},
-        {0.013, 0.059, 0.097, 0.059, 0.013},
-        {0.003, 0.013, 0.022, 0.013, 0.003}
-    };
-
-    public static int applyKernel(BufferedImage input, int x, int y) {
-        double sumR = 0, sumG = 0, sumB = 0;
-        
-        for (int ky = -2; ky <= 2; ky++) {
-            for (int kx = -2; kx <= 2; kx++) {
-                int pixelX = Math.min(Math.max(x + kx, 0), input.getWidth() - 1);
-                int pixelY = Math.min(Math.max(y + ky, 0), input.getHeight() - 1);
-                
-                Color color = new Color(input.getRGB(pixelX, pixelY));
-                double weight = kernel[ky + 2][kx + 2];
-                
-                sumR += color.getRed() * weight;
-                sumG += color.getGreen() * weight;
-                sumB += color.getBlue() * weight;
-            }
-        }
-        
-        return new Color(
-            (int) Math.min(255, Math.max(0, sumR)),
-            (int) Math.min(255, Math.max(0, sumG)),
-            (int) Math.min(255, Math.max(0, sumB))
-        ).getRGB();
-    }
-}
-
-class SobelKernel {
-    private static final int[][] sobelX = {
-        {-1, 0, 1},
-        {-2, 0, 2},
-        {-1, 0, 1}
-    };
-
-    private static final int[][] sobelY = {
-        {-1, -2, -1},
-        {0, 0, 0},
-        {1, 2, 1}
-    };
-
-    public static int applyKernel(BufferedImage input, int x, int y) {
-        int gx = 0;
-        int gy = 0;
-
-        // Apply Sobel kernels
-        for (int ky = -1; ky <= 1; ky++) {
-            for (int kx = -1; kx <= 1; kx++) {
-                int pixelX = Math.min(Math.max(x + kx, 0), input.getWidth() - 1);
-                int pixelY = Math.min(Math.max(y + ky, 0), input.getHeight() - 1);
-                
-                Color color = new Color(input.getRGB(pixelX, pixelY));
-                int gray = (color.getRed() + color.getGreen() + color.getBlue()) / 3;
-                
-                gx += gray * sobelX[ky + 1][kx + 1];
-                gy += gray * sobelY[ky + 1][kx + 1];
-            }
-        }
-
-        // Calculate gradient magnitude
-        int magnitude = (int) Math.sqrt(gx * gx + gy * gy);
-        magnitude = Math.min(255, Math.max(0, magnitude));
-
-        return new Color(magnitude, magnitude, magnitude).getRGB();
-    }
-}
-
-class FilterThread extends Thread {
-    private BufferedImage input;
-    private BufferedImage output;
-    private int startY, endY;
-    private String operation;
-    private int contrastValue;
-
-    public FilterThread(BufferedImage input, BufferedImage output, int startY, int endY, String operation, int contrastValue) {
-        this.input = input;
-        this.output = output;
-        this.startY = startY;
-        this.endY = endY;
-        this.operation = operation;
-        this.contrastValue = contrastValue;
-    }
-
-    @Override
-    public void run() {
-        if ("ASCII Art".equals(operation)) {
-            // ASCII Art needs to process the entire image at once
-            BufferedImage asciiImage = ASCIIArtConverter.convertToASCII(input);
-            for (int y = startY; y < endY; y++) {
-                for (int x = 0; x < input.getWidth(); x++) {
-                    output.setRGB(x, y, asciiImage.getRGB(x, y));
-                }
-            }
-        } else {
-            for (int y = startY; y < endY; y++) {
-                for (int x = 0; x < input.getWidth(); x++) {
-                    int newRGB = switch (operation) {
-                        case "Gaussian Blur" -> GaussianKernel.applyKernel(input, x, y);
-                        case "Sobel Edge Detection" -> SobelKernel.applyKernel(input, x, y);
-                        case "Grayscale" -> {
-                            Color color = new Color(input.getRGB(x, y));
-                            int r = color.getRed();
-                            int g = color.getGreen();
-                            int b = color.getBlue();
-                            int gray = (r + g + b) / 3;
-                            yield new Color(gray, gray, gray).getRGB();
-                        }
-                        case "Edge Detection" -> {
-                            Color color = new Color(input.getRGB(x, y));
-                            int r = color.getRed();
-                            int g = color.getGreen();
-                            int b = color.getBlue();
-                            int gray = (r + g + b) / 3;
-                            int edge = gray > 128 ? 255 : 0;
-                            yield new Color(edge, edge, edge).getRGB();
-                        }
-                        case "Contrast" -> {
-                            Color color = new Color(input.getRGB(x, y));
-                            double factor = (259.0 * (contrastValue + 255)) / (255.0 * (259 - contrastValue));
-                            int r = (int) (factor * (color.getRed() - 128) + 128);
-                            int g = (int) (factor * (color.getGreen() - 128) + 128);
-                            int b = (int) (factor * (color.getBlue() - 128) + 128);
-                            r = Math.min(255, Math.max(0, r));
-                            g = Math.min(255, Math.max(0, g));
-                            b = Math.min(255, Math.max(0, b));
-                            yield new Color(r, g, b).getRGB();
-                        }
-                        default -> input.getRGB(x, y);
-                    };
-                    output.setRGB(x, y, newRGB);
-                }
-            }
-        }
-    }
-}
-
-class SequentialFilter {
-    private BufferedImage input;
-    private BufferedImage output;
-    private String operation;
-    private int contrastValue;
-
-    public SequentialFilter(BufferedImage input, BufferedImage output, String operation, int contrastValue) {
-        this.input = input;
-        this.output = output;
-        this.operation = operation;
-        this.contrastValue = contrastValue;
-    }
-
-    public void process() {
-        long startTime = System.currentTimeMillis();
-        
-        if ("ASCII Art".equals(operation)) {
-            BufferedImage asciiImage = ASCIIArtConverter.convertToASCII(input);
-            for (int y = 0; y < input.getHeight(); y++) {
-                for (int x = 0; x < input.getWidth(); x++) {
-                    output.setRGB(x, y, asciiImage.getRGB(x, y));
-                }
-            }
-        } else {
-            for (int y = 0; y < input.getHeight(); y++) {
-                for (int x = 0; x < input.getWidth(); x++) {
-                    int newRGB = switch (operation) {
-                        case "Gaussian Blur" -> GaussianKernel.applyKernel(input, x, y);
-                        case "Sobel Edge Detection" -> SobelKernel.applyKernel(input, x, y);
-                        case "Grayscale" -> {
-                            Color color = new Color(input.getRGB(x, y));
-                            int r = color.getRed();
-                            int g = color.getGreen();
-                            int b = color.getBlue();
-                            int gray = (r + g + b) / 3;
-                            yield new Color(gray, gray, gray).getRGB();
-                        }
-                        case "Edge Detection" -> {
-                            Color color = new Color(input.getRGB(x, y));
-                            int r = color.getRed();
-                            int g = color.getGreen();
-                            int b = color.getBlue();
-                            int gray = (r + g + b) / 3;
-                            int edge = gray > 128 ? 255 : 0;
-                            yield new Color(edge, edge, edge).getRGB();
-                        }
-                        case "Contrast" -> {
-                            Color color = new Color(input.getRGB(x, y));
-                            double factor = (259.0 * (contrastValue + 255)) / (255.0 * (259 - contrastValue));
-                            int r = (int) (factor * (color.getRed() - 128) + 128);
-                            int g = (int) (factor * (color.getGreen() - 128) + 128);
-                            int b = (int) (factor * (color.getBlue() - 128) + 128);
-                            r = Math.min(255, Math.max(0, r));
-                            g = Math.min(255, Math.max(0, g));
-                            b = Math.min(255, Math.max(0, b));
-                            yield new Color(r, g, b).getRGB();
-                        }
-                        default -> input.getRGB(x, y);
-                    };
-                    output.setRGB(x, y, newRGB);
-                }
-            }
-        }
-        
-        long endTime = System.currentTimeMillis();
-        System.out.printf("Sequential Processing Time: %d ms%n", endTime - startTime);
-    }
-}
-
-class ASCIIArtConverter {
-    private static final String ASCII_CHARS = " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
-    private static final int CHAR_WIDTH = 4;   // Reduced from 8 to 4
-    private static final int CHAR_HEIGHT = 8;  // Reduced from 16 to 8
-
-    public static BufferedImage convertToASCII(BufferedImage input) {
-        int width = input.getWidth();
-        int height = input.getHeight();
-        
-        // Calculate dimensions for ASCII art
-        int asciiWidth = width / CHAR_WIDTH;
-        int asciiHeight = height / CHAR_HEIGHT;
-        
-        // Create a new image for the ASCII art
-        BufferedImage output = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g2d = output.createGraphics();
-        g2d.setColor(Color.BLACK);
-        g2d.fillRect(0, 0, width, height);
-        g2d.setColor(Color.WHITE);
-        g2d.setFont(new Font("Monospaced", Font.PLAIN, CHAR_HEIGHT));
-        
-        // Enable anti-aliasing for smoother text
-        g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-        g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-
-        // Process each character block
-        for (int y = 0; y < asciiHeight; y++) {
-            for (int x = 0; x < asciiWidth; x++) {
-                // Calculate average brightness for this block
-                int totalBrightness = 0;
-                int pixelCount = 0;
-                
-                for (int py = y * CHAR_HEIGHT; py < (y + 1) * CHAR_HEIGHT && py < height; py++) {
-                    for (int px = x * CHAR_WIDTH; px < (x + 1) * CHAR_WIDTH && px < width; px++) {
-                        Color color = new Color(input.getRGB(px, py));
-                        totalBrightness += (color.getRed() + color.getGreen() + color.getBlue()) / 3;
-                        pixelCount++;
-                    }
-                }
-                
-                int avgBrightness = totalBrightness / pixelCount;
-                
-                // Map brightness to ASCII character
-                int charIndex = (int) ((avgBrightness / 255.0) * (ASCII_CHARS.length() - 1));
-                char asciiChar = ASCII_CHARS.charAt(charIndex);
-                
-                // Draw the character
-                g2d.drawString(String.valueOf(asciiChar), x * CHAR_WIDTH, y * CHAR_HEIGHT + CHAR_HEIGHT);
-            }
-        }
-        
-        g2d.dispose();
-        return output;
-    }
-}
-
