@@ -4,16 +4,23 @@ import org.bytedeco.javacv.*;
 import org.bytedeco.opencv.opencv_core.Mat;
 
 import javax.swing.*;
+import javax.swing.border.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferByte;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class InteractiveImageProcessor extends JFrame {
+    private static final Color BACKGROUND_COLOR = new Color(245, 245, 245);
+    private static final Color ACCENT_COLOR = new Color(70, 130, 180);
+    private static final Color TEXT_COLOR = new Color(51, 51, 51);
+    private static final int PADDING = 15;
+    
     private JLabel originalImageLabel;
     private JLabel processedImageLabel;
     private JComboBox<String> operationSelector;
     private JProgressBar progressBar;
+    private JButton startCameraButton;
 
     private OpenCVFrameGrabber grabber;
     private OpenCVFrameConverter.ToMat converter = new OpenCVFrameConverter.ToMat();
@@ -27,51 +34,117 @@ public class InteractiveImageProcessor extends JFrame {
     private void initializeUI() {
         setTitle("Interactive Camera Processor");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setLayout(new BorderLayout(10, 10));
-
-        setupImageDisplayPanel();
-        setupControlPanel();
-        setupProgressPanel();
-
-        setSize(900, 700);
+        getContentPane().setBackground(BACKGROUND_COLOR);
+        
+        // Main container with padding
+        JPanel mainPanel = new JPanel(new BorderLayout(PADDING, PADDING));
+        mainPanel.setBackground(BACKGROUND_COLOR);
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(PADDING, PADDING, PADDING, PADDING));
+        
+        setupImageDisplayPanel(mainPanel);
+        setupControlPanel(mainPanel);
+        setupProgressPanel(mainPanel);
+        
+        add(mainPanel);
+        add(performanceTracker.getMetricsPanel(), BorderLayout.SOUTH);
+        
+        setSize(1000, 800);
         setLocationRelativeTo(null);
         setVisible(true);
-        add(performanceTracker.getMetricsPanel(), BorderLayout.SOUTH);
     }
 
-    private void setupImageDisplayPanel() {
-        originalImageLabel = new JLabel("Original Image", JLabel.CENTER);
-        originalImageLabel.setPreferredSize(new Dimension(400, 300));
-        processedImageLabel = new JLabel("Processed Image", JLabel.CENTER);
-        processedImageLabel.setPreferredSize(new Dimension(400, 300));
-        JPanel imagePanel = new JPanel(new GridLayout(1, 2, 10, 10));
-        imagePanel.add(originalImageLabel);
-        imagePanel.add(processedImageLabel);
-        add(imagePanel, BorderLayout.NORTH);
+    private void setupImageDisplayPanel(JPanel mainPanel) {
+        JPanel imagePanel = new JPanel(new GridLayout(1, 2, PADDING, PADDING));
+        imagePanel.setBackground(BACKGROUND_COLOR);
+        
+        originalImageLabel = createImageLabel("Original Image");
+        processedImageLabel = createImageLabel("Processed Image");
+        
+        imagePanel.add(createImageContainer(originalImageLabel));
+        imagePanel.add(createImageContainer(processedImageLabel));
+        
+        mainPanel.add(imagePanel, BorderLayout.CENTER);
     }
 
-    private void setupControlPanel() {
-        JPanel leftPanel = new JPanel();
-        leftPanel.setLayout(new BoxLayout(leftPanel, BoxLayout.Y_AXIS));
-        JButton startCameraButton = new JButton("Start Camera");
+    private JLabel createImageLabel(String text) {
+        JLabel label = new JLabel(text, JLabel.CENTER);
+        label.setPreferredSize(new Dimension(450, 350));
+        label.setForeground(TEXT_COLOR);
+        label.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        label.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR, 1),
+            BorderFactory.createEmptyBorder(5, 5, 5, 5)
+        ));
+        return label;
+    }
+
+    private JPanel createImageContainer(JLabel label) {
+        JPanel container = new JPanel(new BorderLayout());
+        container.setBackground(BACKGROUND_COLOR);
+        container.add(label, BorderLayout.CENTER);
+        return container;
+    }
+
+    private void setupControlPanel(JPanel mainPanel) {
+        JPanel controlPanel = new JPanel();
+        controlPanel.setLayout(new BoxLayout(controlPanel, BoxLayout.Y_AXIS));
+        controlPanel.setBackground(BACKGROUND_COLOR);
+        controlPanel.setBorder(BorderFactory.createEmptyBorder(0, PADDING, 0, PADDING));
+
+        startCameraButton = createStyledButton("Start Camera");
         String[] operations = {"Edge Detection", "Grayscale"};
         operationSelector = new JComboBox<>(operations);
-        leftPanel.add(startCameraButton);
-        leftPanel.add(Box.createVerticalStrut(20));
-        leftPanel.add(new JLabel("Choose Operation:"));
-        leftPanel.add(operationSelector);
-        add(leftPanel, BorderLayout.WEST);
+        styleComboBox(operationSelector);
 
+        JLabel operationLabel = new JLabel("Choose Operation:");
+        operationLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        operationLabel.setForeground(TEXT_COLOR);
+
+        controlPanel.add(startCameraButton);
+        controlPanel.add(Box.createVerticalStrut(20));
+        controlPanel.add(operationLabel);
+        controlPanel.add(Box.createVerticalStrut(10));
+        controlPanel.add(operationSelector);
+
+        mainPanel.add(controlPanel, BorderLayout.WEST);
         startCameraButton.addActionListener(e -> toggleCamera(startCameraButton));
     }
 
-    private void setupProgressPanel() {
-        JPanel rightPanel = new JPanel();
-        rightPanel.setLayout(new BorderLayout());
+    private JButton createStyledButton(String text) {
+        JButton button = new JButton(text);
+        button.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        button.setForeground(Color.WHITE);
+        button.setBackground(ACCENT_COLOR);
+        button.setFocusPainted(false);
+        button.setBorderPainted(false);
+        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        button.setMaximumSize(new Dimension(150, 40));
+        button.setPreferredSize(new Dimension(150, 40));
+        return button;
+    }
+
+    private void styleComboBox(JComboBox<String> comboBox) {
+        comboBox.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        comboBox.setBackground(Color.WHITE);
+        comboBox.setForeground(TEXT_COLOR);
+        comboBox.setMaximumSize(new Dimension(150, 30));
+    }
+
+    private void setupProgressPanel(JPanel mainPanel) {
+        JPanel progressPanel = new JPanel(new BorderLayout());
+        progressPanel.setBackground(BACKGROUND_COLOR);
+        
         progressBar = new JProgressBar(0, 100);
         progressBar.setStringPainted(true);
-        rightPanel.add(progressBar, BorderLayout.NORTH);
-        add(rightPanel, BorderLayout.EAST);
+        progressBar.setForeground(ACCENT_COLOR);
+        progressBar.setBackground(Color.WHITE);
+        progressBar.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(ACCENT_COLOR, 1),
+            BorderFactory.createEmptyBorder(5, 5, 5, 5)
+        ));
+        
+        progressPanel.add(progressBar, BorderLayout.NORTH);
+        mainPanel.add(progressPanel, BorderLayout.EAST);
     }
 
     private void toggleCamera(JButton button) {
