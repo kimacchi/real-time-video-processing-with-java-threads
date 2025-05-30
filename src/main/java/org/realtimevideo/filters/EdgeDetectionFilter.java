@@ -1,3 +1,6 @@
+// src/main/java/org/realtimevideo/filters/EdgeDetectionFilter.java
+
+
 package org.realtimevideo.filters;
 
 import java.awt.Color;
