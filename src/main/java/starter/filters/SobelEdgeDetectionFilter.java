@@ -1,7 +1,4 @@
-// src/main/java/org/realtimevideo/filters/SobelEdgeDetection.java
-
-
-package org.realtimevideo.filters;
+package starter.filters;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;

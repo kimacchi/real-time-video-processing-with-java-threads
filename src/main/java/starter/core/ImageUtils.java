@@ -1,6 +1,4 @@
-// src/main/java/org/realtimevideo/core/ImageUtils.java
-
-package org.realtimevideo.core;
+package starter.core;
 
 import java.awt.Graphics2D;
 import java.awt.Image;

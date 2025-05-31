@@ -1,7 +1,4 @@
-// src/main/java/org/realtimevideo/core/PerformanceMetrics.java
-
-
-package org.realtimevideo.core;
+package starter.core;
 
 import java.util.ArrayList;
 import java.util.Collections;

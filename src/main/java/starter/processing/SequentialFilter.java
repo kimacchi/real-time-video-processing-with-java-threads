@@ -1,17 +1,15 @@
-// src/main/java/org/realtimevideo/processing/SequentialFilter.java
-
-
-package org.realtimevideo.processing;
+package starter.processing;
 
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 
-import org.realtimevideo.filters.ASCIIArtFilter;
-import org.realtimevideo.filters.ContrastAdjustmentFilter; // Yeni
-import org.realtimevideo.filters.EdgeDetectionFilter;    // Yeni
-import org.realtimevideo.filters.GaussianBlurFilter;
-import org.realtimevideo.filters.GrayscaleFilter;        // Yeni
-import org.realtimevideo.filters.SobelEdgeDetectionFilter;
+import starter.filters.GrayscaleFilter;
+import starter.filters.ContrastAdjustmentFilter;
+import starter.filters.GaussianBlurFilter;
+import starter.filters.SobelEdgeDetectionFilter;
+import starter.filters.EdgeDetectionFilter;
+import starter.filters.ASCIIArtFilter;
+
 
 
 public class SequentialFilter {

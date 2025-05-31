@@ -1,7 +1,4 @@
-// src/main/java/org/realtimevideo/filters/ContrastAdjustmentFilter.java
-
-
-package org.realtimevideo.filters;
+package starter.filters;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
