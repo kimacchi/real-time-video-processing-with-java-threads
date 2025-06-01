@@ -25,19 +25,6 @@
     -fx-text-alignment: center;
 }
 
-.camera-card {
-    -fx-background-color: #2d2d2d;
-    -fx-background-radius: 8px;
-    -fx-border-radius: 8px;
-    -fx-border-color: #3d3d3d;
-    -fx-border-width: 1px;
-    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.2), 10, 0, 0, 2);
-}
-
-.camera-card:hover {
-    -fx-background-color: #353535;
-    -fx-border-color: #4d4d4d;
-}
 
 .button-primary {
     -fx-background-color: #2d2d2d;
