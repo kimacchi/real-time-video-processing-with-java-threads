@@ -4,12 +4,6 @@ A really quick skeleton project to get started with AtlantaFX and Maven. Just cl
 
 ## How to use
 
-To clone the repo:
-
-```shell
-git clone https://github.com/mkpaz/atlantafx-starter
-```
-
 To run the app:
 
 ```shell
