@@ -1,3 +1,5 @@
+// src/main/java/module-info.java
+
 module starter {
 
     requires javafx.controls;

@@ -1,3 +1,5 @@
+//src/main/java/starter/core/ImageUtils.java
+
 package starter.core;
 
 import java.awt.Graphics2D;
@@ -7,17 +9,21 @@ import java.awt.image.DataBufferByte;
 
 import org.bytedeco.opencv.opencv_core.Mat;
 
+/**
+ * ImageUtils sınıfı, görüntü işleme için yardımcı fonksiyonlar sağlar.
+ * OpenCV Mat nesnelerini Java BufferedImage'e dönüştürme ve görüntü
+ * ölçeklendirme gibi temel işlemleri içerir.
+ */
 public class ImageUtils {
 
     /**
-     * Bir OpenCV {@link Mat} nesnesini Java {@link BufferedImage} nesnesine dönüştürür.
-     * Bu dönüşüm, OpenCV ile işlenen görüntülerin Swing GUI bileşenlerinde (örn. JLabel)
-     * gösterilebilmesi için gereklidir. Görüntünün renk formatının (BGR)
-     * BufferedImage için uygun tipe (TYPE_3BYTE_BGR) dönüştürülmesini sağlar.
+     * Bir OpenCV Mat nesnesini Java BufferedImage'e dönüştürür.
+     * Bu dönüşüm, OpenCV ile işlenen görüntülerin Swing GUI bileşenlerinde
+     * gösterilebilmesi için gereklidir. Görüntünün renk formatı (BGR)
+     * BufferedImage için uygun tipe (TYPE_3BYTE_BGR) dönüştürülür.
      *
-     * @param mat Dönüştürülecek OpenCV Mat nesnesi. Mat nesnesinin geçerli ve dolu olduğu varsayılır.
-     * @return Mat nesnesinden oluşturulan BufferedImage. Eğer Mat 3 kanallı değilse veya boşsa
-     *         beklenmedik sonuçlar veya hatalar oluşabilir.
+     * @param mat Dönüştürülecek OpenCV Mat nesnesi
+     * @return Mat nesnesinden oluşturulan BufferedImage
      */
     public static BufferedImage matToBufferedImage(Mat mat) {
         int type = BufferedImage.TYPE_3BYTE_BGR;
@@ -35,16 +41,15 @@ public class ImageUtils {
     }
 
     /**
-     * Verilen bir {@link BufferedImage}'ı, en boy oranını koruyarak belirtilen maksimum
-     * genişlik ve yüksekliğe sığacak şekilde ölçeklendirir.
-     * Bu, görüntülerin GUI'deki sabit boyutlu alanlara (örn. JLabel) düzgün bir şekilde
-     * yerleştirilmesi için kullanılır. Ölçekleme için {@link Image#SCALE_SMOOTH} kullanılır,
-     * bu da daha kaliteli ama yavaş bir ölçekleme sağlar.
+     * Verilen bir BufferedImage'i, en-boy oranını koruyarak belirtilen
+     * maksimum genişlik ve yüksekliğe sığacak şekilde ölçeklendirir.
+     * Bu, görüntülerin GUI'deki sabit boyutlu alanlara düzgün bir
+     * şekilde yerleştirilmesi için kullanılır.
      *
-     * @param img Ölçeklendirilecek orijinal BufferedImage.
-     * @param maxW Ölçeklenmiş görüntünün maksimum genişliği.
-     * @param maxH Ölçeklenmiş görüntünün maksimum yüksekliği.
-     * @return Ölçeklendirilmiş yeni bir BufferedImage.
+     * @param img Ölçeklendirilecek orijinal görüntü
+     * @param maxW Ölçeklenmiş görüntünün maksimum genişliği
+     * @param maxH Ölçeklenmiş görüntünün maksimum yüksekliği
+     * @return Ölçeklendirilmiş yeni bir BufferedImage
      */
     public static BufferedImage getScaledImage(BufferedImage img, int maxW, int maxH) {
         int originalW = img.getWidth();

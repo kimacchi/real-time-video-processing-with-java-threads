@@ -1,3 +1,5 @@
+// src/main/java/starter/filters/ContrastAdjustmentFilter.java
+
 package starter.filters;
 
 import java.awt.Color;
@@ -5,18 +7,22 @@ import java.awt.image.BufferedImage;
 
 /**
  * ContrastAdjustmentFilter sınıfı, bir görüntünün kontrastını ayarlar.
+ * Kontrast değeri, görüntüdeki parlaklık değerlerinin dağılımını
+ * etkiler. Yüksek kontrast, parlak ve koyu bölgeler arasındaki
+ * farkı artırırken, düşük kontrast bu farkı azaltır.
  */
 public class ContrastAdjustmentFilter {
 
     /**
      * Belirtilen (x, y) koordinatındaki pikselin kontrastını ayarlar.
+     * Kontrast değeri, pikselin RGB bileşenlerinin parlaklık değerlerini
+     * etkiler. 100 değeri nötr (kontrast değişikliği yok) anlamına gelir.
      *
-     * @param input Girdi {@link BufferedImage} nesnesi.
-     * @param x Uygulanacak pikselin x koordinatı.
-     * @param y Uygulanacak pikselin y koordinatı.
-     * @param contrastValue Kontrast değeri (GUI'deki slider'dan gelen 0-200 aralığındaki değer).
-     *                      100 nötr (kontrast değişikliği yok) anlamına gelir.
-     * @return Kontrastı ayarlanmış pikselin RGB tam sayı değeri.
+     * @param input Girdi görüntüsü
+     * @param x İşlenecek pikselin x koordinatı
+     * @param y İşlenecek pikselin y koordinatı
+     * @param contrastValue Kontrast değeri (0-200 arası, 100 nötr)
+     * @return Kontrastı ayarlanmış pikselin RGB değeri
      */
     public static int apply(BufferedImage input, int x, int y, int contrastValue) {
         Color color = new Color(input.getRGB(x, y));
@@ -25,9 +31,12 @@ public class ContrastAdjustmentFilter {
 
     /**
      * Verilen renk değerinin kontrastını ayarlar.
-     * @param rgb Orijinal renk değeri.
-     * @param contrastValue Kontrast değeri (0-200).
-     * @return Kontrastı ayarlanmış renk değeri.
+     * Kontrast değeri, rengin RGB bileşenlerinin parlaklık değerlerini
+     * etkiler. 100 değeri nötr (kontrast değişikliği yok) anlamına gelir.
+     *
+     * @param rgb Orijinal renk değeri
+     * @param contrastValue Kontrast değeri (0-200 arası, 100 nötr)
+     * @return Kontrastı ayarlanmış renk değeri
      */
     public static int apply(int rgb, int contrastValue) {
         Color color = new Color(rgb);
@@ -36,11 +45,14 @@ public class ContrastAdjustmentFilter {
 
     /**
      * RGB bileşenlerine kontrast ayarı uygular.
-     * @param r Kırmızı bileşen.
-     * @param g Yeşil bileşen.
-     * @param b Mavi bileşen.
-     * @param contrastValue Kontrast değeri (0-200).
-     * @return Kontrastı ayarlanmış rengin RGB tam sayı değeri.
+     * Her bileşen için parlaklık değeri, kontrast değerine göre
+     * ayarlanır. 100 değeri nötr (kontrast değişikliği yok) anlamına gelir.
+     *
+     * @param r Kırmızı bileşen (0-255)
+     * @param g Yeşil bileşen (0-255)
+     * @param b Mavi bileşen (0-255)
+     * @param contrastValue Kontrast değeri (0-200 arası, 100 nötr)
+     * @return Kontrastı ayarlanmış rengin RGB değeri
      */
     private static int applyContrast(int r, int g, int b, int contrastValue) {
         // contrastValue (0-200), 100 nötr.

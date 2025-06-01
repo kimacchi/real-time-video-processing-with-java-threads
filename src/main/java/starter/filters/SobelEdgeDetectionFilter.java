@@ -1,18 +1,25 @@
+// src/main/java/starter/filters/SobelEdgeDetectionFilter.java
+
 package starter.filters;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 
 /**
- * SobelEdgeDetectionFilter sınıfı, bir görüntüde Sobel operatörlerini kullanarak kenar tespiti yapar.
+ * SobelEdgeDetectionFilter sınıfı, bir görüntüde Sobel operatörlerini kullanarak
+ * kenar tespiti yapar. Yatay ve dikey yönlerdeki gradyanları hesaplayarak
+ * kenarları belirler. Bu, görüntüdeki ani yoğunluk değişimlerini tespit
+ * etmek için kullanılır.
  */
 public class SobelEdgeDetectionFilter {
+    // Yatay yöndeki Sobel çekirdeği
     private static final int[][] SOBEL_X = {
         {-1, 0, 1},
         {-2, 0, 2},
         {-1, 0, 1}
     };
 
+    // Dikey yöndeki Sobel çekirdeği
     private static final int[][] SOBEL_Y = {
         {-1, -2, -1},
         {0, 0, 0},
@@ -21,11 +28,13 @@ public class SobelEdgeDetectionFilter {
 
     /**
      * Belirtilen (x, y) koordinatındaki piksele Sobel operatörlerini uygular.
+     * Önce piksel gri tonlamalı yapılır, sonra yatay ve dikey gradyanlar
+     * hesaplanır. Gradyan büyüklüğü, kenar tespiti için kullanılır.
      *
-     * @param input Girdi {@link BufferedImage} nesnesi.
-     * @param x Uygulanacak pikselin x koordinatı.
-     * @param y Uygulanacak pikselin y koordinatı.
-     * @return Sobel kenar tespiti uygulanmış pikselin (gradyan büyüklüğü) RGB tam sayı değeri.
+     * @param input Girdi görüntüsü
+     * @param x İşlenecek pikselin x koordinatı
+     * @param y İşlenecek pikselin y koordinatı
+     * @return Kenar tespiti uygulanmış pikselin RGB değeri (gri tonlamalı)
      */
     public static int apply(BufferedImage input, int x, int y) {
         int gx = 0;
